@@ -174,7 +174,7 @@ All datasets are properly integrated:
 ## Project Structure
 
 ```
-Optimized-Delivey-system/
+Optimized-Delivery-System/
 ├── predictive_delivery_optimizer/
 │   ├── __init__.py
 │   ├── app.py                      # Streamlit application
