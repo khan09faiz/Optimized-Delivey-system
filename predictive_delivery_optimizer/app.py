@@ -14,6 +14,10 @@ from feature_engineering import FeatureEngineer
 from model_training import ModelTrainer
 from visualization import Visualizer
 from recommendation_engine import RecommendationEngine
+from explainability import ExplainabilityAnalyzer
+from trend_analysis import TrendAnalyzer
+from advanced_reporting import ReportGenerator
+from anomaly_detection import AnomalyDetector
 from utils import Config, setup_logging, get_risk_category, format_currency, format_percentage
 
 logger = setup_logging("streamlit_app")
@@ -150,7 +154,13 @@ def main():
                 logger.error(f"Training error: {str(e)}", exc_info=True)
     
     # Tabs
-    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎯 Predictions", "💡 Recommendations"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Dashboard", 
+        "🎯 Predictions", 
+        "💡 Recommendations",
+        "📈 Trends & Analysis",
+        "🔍 Anomaly Detection"
+    ])
     
     # ==================== Tab 1: Dashboard ====================
     with tab1:
@@ -177,23 +187,72 @@ def main():
         with col1:
             st.subheader("Delay Distribution")
             fig = viz.plot_delay_distribution(filtered_df)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="dashboard_delay_dist")
         
         with col2:
             st.subheader("Carrier Performance")
             fig = viz.plot_carrier_performance(filtered_df)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="dashboard_carrier_perf")
         
         col3, col4 = st.columns(2)
         with col3:
             st.subheader("Priority Analysis")
             fig = viz.plot_priority_analysis(filtered_df)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="dashboard_priority")
         
         with col4:
             st.subheader("Distance vs Delay")
             fig = viz.plot_distance_vs_delay(filtered_df)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="dashboard_distance")
+        
+        # Report Export Section
+        st.markdown("---")
+        st.subheader("📊 Advanced Reporting & Export")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("📥 Export to Excel"):
+                try:
+                    # Create report generator
+                    report_gen = ReportGenerator(filtered_raw_df)
+                    excel_file = report_gen.export_to_excel()
+                    
+                    st.download_button(
+                        label="Download Excel Report",
+                        data=excel_file,
+                        file_name=f"delivery_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                    st.success("✅ Excel report generated!")
+                except Exception as e:
+                    st.error(f"Error generating Excel: {str(e)}")
+        
+        with col2:
+            if st.button("📄 Generate HTML Report"):
+                try:
+                    report_gen = ReportGenerator(filtered_raw_df)
+                    html_report = report_gen.create_html_report()
+                    
+                    st.download_button(
+                        label="Download HTML Report",
+                        data=html_report,
+                        file_name=f"delivery_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.html",
+                        mime="text/html"
+                    )
+                    st.success("✅ HTML report generated!")
+                except Exception as e:
+                    st.error(f"Error generating HTML: {str(e)}")
+        
+        with col3:
+            if st.button("📋 View Executive Summary"):
+                try:
+                    report_gen = ReportGenerator(filtered_raw_df)
+                    exec_summary = report_gen.create_executive_summary()
+                    
+                    st.json(exec_summary)
+                except Exception as e:
+                    st.error(f"Error creating summary: {str(e)}")
     
     # ==================== Tab 2: Predictions ====================
     with tab2:
@@ -238,6 +297,87 @@ def main():
             # Download
             csv = result_df.to_csv(index=False)
             st.download_button("📥 Download Predictions", csv, "predictions.csv", "text/csv")
+            
+            # Enhanced SHAP Explainability
+            st.markdown("---")
+            st.subheader("🎯 Model Explainability (SHAP)")
+            
+            if st.checkbox("Show SHAP Analysis"):
+                with st.spinner("Computing SHAP values..."):
+                    try:
+                        # Get train/test split
+                        from sklearn.model_selection import train_test_split
+                        X_train, X_test, _, _ = train_test_split(
+                            X, filtered_df['delay_flag'], 
+                            test_size=0.2, random_state=42, 
+                            stratify=filtered_df['delay_flag']
+                        )
+                        
+                        # Create explainer
+                        explainer = ExplainabilityAnalyzer(
+                            trainer.best_model, 
+                            X_train
+                        )
+                        explainer.create_explainer()
+                        explainer.compute_shap_values(X_test)
+                        
+                        # Store in session
+                        st.session_state.explainer = explainer
+                        st.session_state.X_test = X_test
+                        
+                        # Global importance
+                        st.subheader("Global Feature Importance")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("**Interactive Bar Chart**")
+                            fig_bar = explainer.plot_shap_bar_interactive(X_test, top_n=15)
+                            st.plotly_chart(fig_bar, use_container_width=True, key="shap_bar_chart")
+                        
+                        with col2:
+                            st.write("**Summary Plot**")
+                            fig_summary = explainer.plot_shap_summary_interactive(X_test, max_display=15)
+                            st.plotly_chart(fig_summary, use_container_width=True, key="shap_summary_chart")
+                        
+                        # Instance-level explanation
+                        st.subheader("Individual Prediction Explanation")
+                        
+                        instance_idx = st.number_input(
+                            "Select Instance Index", 
+                            0, len(X_test)-1, 0
+                        )
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("**Waterfall Plot**")
+                            fig_waterfall = explainer.plot_shap_waterfall_interactive(X_test, instance_idx)
+                            st.plotly_chart(fig_waterfall, use_container_width=True, key="shap_waterfall_chart")
+                        
+                        with col2:
+                            st.write("**Force Plot**")
+                            fig_force = explainer.plot_shap_force_interactive(X_test, instance_idx)
+                            st.plotly_chart(fig_force, use_container_width=True, key="shap_force_chart")
+                        
+                        # Feature dependence
+                        st.subheader("Feature Dependence Analysis")
+                        
+                        importance_df = explainer.get_global_importance(X_test, top_n=10)
+                        selected_feature = st.selectbox(
+                            "Select Feature for Dependence Analysis",
+                            importance_df['feature'].tolist()
+                        )
+                        
+                        fig_dependence = explainer.plot_shap_dependence_interactive(
+                            X_test, 
+                            selected_feature
+                        )
+                        st.plotly_chart(fig_dependence, use_container_width=True, key="shap_dependence_chart")
+                        
+                    except Exception as e:
+                        st.error(f"Error in SHAP analysis: {str(e)}")
+                        logger.error(f"SHAP analysis error: {str(e)}", exc_info=True)
     
     # ==================== Tab 3: Recommendations ====================
     with tab3:
@@ -291,6 +431,162 @@ def main():
                                 st.info("ℹ️ MODERATE RISK: Track progress")
                                 st.write("- Monitor delivery status")
                                 st.write("- Schedule follow-up check")
+    
+    # ==================== Tab 4: Trends & Analysis ====================
+    with tab4:
+        st.header("Historical Trend Analysis")
+        
+        if 'order_date' in filtered_raw_df.columns:
+            try:
+                # Initialize trend analyzer
+                trend_analyzer = TrendAnalyzer(filtered_raw_df)
+                
+                # Time trends
+                st.subheader("Delivery Performance Trends Over Time")
+                
+                time_period = st.selectbox("Select Time Period", ["Daily", "Weekly", "Monthly"])
+                
+                if time_period == "Daily":
+                    trends = trend_analyzer.analyze_time_trends(period='daily')
+                    fig = trend_analyzer.plot_delay_trend(trends)
+                elif time_period == "Weekly":
+                    trends = trend_analyzer.analyze_time_trends(period='weekly')
+                    fig = trend_analyzer.plot_delay_trend(trends)
+                else:
+                    trends = trend_analyzer.analyze_time_trends(period='monthly')
+                    fig = trend_analyzer.plot_delay_trend(trends)
+                
+                st.plotly_chart(fig, use_container_width=True, key="trends_delay_chart")
+                
+                # Carrier trends
+                st.subheader("Carrier Performance Trends")
+                carrier_trends = trend_analyzer.analyze_carrier_trends()
+                fig_carrier = trend_analyzer.plot_carrier_performance_trends(carrier_trends)
+                st.plotly_chart(fig_carrier, use_container_width=True, key="trends_carrier_chart")
+                
+                # Trend summary
+                st.subheader("Trend Summary")
+                summary = trend_analyzer.get_trend_summary(trends)
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric(
+                        "Overall Trend",
+                        summary['trend_direction'],
+                        f"{summary['improvement_rate']:.2f}% improvement" if summary['improvement_rate'] > 0 else "No improvement"
+                    )
+                
+                with col2:
+                    st.metric(
+                        "Current Delay Rate",
+                        f"{summary['current_delay_rate']*100:.1f}%"
+                    )
+                
+                with col3:
+                    st.metric(
+                        "Average Delay Rate",
+                        f"{summary['avg_delay_rate']*100:.1f}%"
+                    )
+                
+                # Additional trend insights
+                st.subheader("Trend Insights")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if summary['best_day'] is not None:
+                        st.success(f"✅ **Best Day**: {summary['best_day']}")
+                    else:
+                        st.info("No best day data available")
+                
+                with col2:
+                    if summary['worst_day'] is not None:
+                        st.warning(f"⚠️ **Worst Day**: {summary['worst_day']}")
+                    else:
+                        st.info("No worst day data available")
+                
+            except Exception as e:
+                st.error(f"Error in trend analysis: {str(e)}")
+                logger.error(f"Trend analysis error: {str(e)}", exc_info=True)
+        else:
+            st.warning("Order date information not available for trend analysis")
+    
+    # ==================== Tab 5: Anomaly Detection ====================
+    with tab5:
+        st.header("Anomaly Detection")
+        
+        try:
+            # Initialize anomaly detector
+            contamination = st.slider("Expected Anomaly Rate", 0.01, 0.5, 0.1, 0.01)
+            detector = AnomalyDetector(filtered_df, contamination=contamination)
+            
+            if st.button("🔍 Detect Anomalies"):
+                with st.spinner("Detecting anomalies..."):
+                    # Comprehensive anomaly detection
+                    anomalies = detector.get_comprehensive_anomalies()
+                    
+                    # Store in session
+                    st.session_state.anomalies = anomalies
+                    st.session_state.detector = detector
+                    
+                    st.success(f"✅ Detection complete! Found {anomalies['is_anomalous'].sum()} anomalies")
+            
+            if 'anomalies' in st.session_state:
+                anomalies = st.session_state.anomalies
+                detector = st.session_state.detector
+                
+                # Overview metrics
+                col1, col2, col3, col4 = st.columns(4)
+                
+                col1.metric("Total Anomalies", f"{anomalies['is_anomalous'].sum():,}")
+                col2.metric("ML-Based", f"{anomalies.get('is_anomaly', pd.Series([False])).sum():,}")
+                col3.metric("Delivery Time", f"{anomalies.get('has_delivery_anomaly', pd.Series([False])).sum():,}")
+                col4.metric("Pattern", f"{anomalies.get('has_pattern_anomaly', pd.Series([False])).sum():,}")
+                
+                # Visualizations
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.subheader("Anomaly Overview")
+                    fig_overview = detector.plot_anomaly_overview(anomalies)
+                    st.plotly_chart(fig_overview, use_container_width=True, key="anomaly_overview_chart")
+                
+                with col2:
+                    st.subheader("Anomaly Score Distribution")
+                    fig_scores = detector.plot_anomaly_scores()
+                    st.plotly_chart(fig_scores, use_container_width=True, key="anomaly_scores_chart")
+                
+                # Carrier anomaly analysis
+                st.subheader("Anomalies by Carrier")
+                fig_carrier = detector.plot_anomalies_by_carrier(anomalies)
+                st.plotly_chart(fig_carrier, use_container_width=True, key="anomaly_carrier_chart")
+                
+                # Show critical anomalies
+                st.subheader("Critical Anomalies Requiring Attention")
+                
+                critical_mask = (
+                    (anomalies['anomaly_severity'] == 'CRITICAL') |
+                    (anomalies['anomaly_count'] >= 2)
+                )
+                
+                critical_anomalies = filtered_raw_df[critical_mask].copy()
+                critical_anomalies['anomaly_count'] = anomalies.loc[critical_mask, 'anomaly_count'].values
+                critical_anomalies['severity'] = anomalies.loc[critical_mask, 'anomaly_severity'].values
+                
+                if len(critical_anomalies) > 0:
+                    st.error(f"⚠️ {len(critical_anomalies)} critical anomalies detected")
+                    
+                    display_cols = ['order_id', 'carrier', 'priority', 'distance_km', 
+                                   'actual_delivery_days', 'anomaly_count', 'severity']
+                    display_cols = [c for c in display_cols if c in critical_anomalies.columns]
+                    
+                    st.dataframe(critical_anomalies[display_cols], use_container_width=True)
+                else:
+                    st.success("✅ No critical anomalies found")
+                
+        except Exception as e:
+            st.error(f"Error in anomaly detection: {str(e)}")
+            logger.error(f"Anomaly detection error: {str(e)}", exc_info=True)
 
 
 if __name__ == "__main__":

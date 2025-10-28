@@ -15,6 +15,9 @@ seaborn>=0.12.0
 # Web framework
 streamlit>=1.28.0
 
+# Excel/Reporting
+openpyxl>=3.1.0
+
 # Optimization (optional)
 pulp>=2.7.0
 

@@ -2,8 +2,6 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.50.0-FF4B4B.svg)](https://streamlit.io/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)]()
 
 > **Transform logistics operations from reactive to predictive with AI-powered delivery delay prediction and intelligent optimization recommendations.**
 
@@ -18,7 +16,11 @@ The Predictive Delivery Optimizer is a comprehensive machine learning solution t
 - **Predict delays** with 100% accuracy using dual ML models (RandomForest + XGBoost)
 - **Reduce operational costs** by identifying carrier performance gaps (52% variance detected)
 - **Provide actionable recommendations** with risk-based corrective actions
-- **Visualize insights** through an interactive Streamlit dashboard
+- **Visualize insights** through an interactive Streamlit dashboard with 5 feature-rich tabs
+- **Analyze trends** with historical pattern detection and forecasting
+- **Detect anomalies** using machine learning and statistical methods
+- **Generate reports** with Excel and HTML export capabilities
+- **Explain predictions** with enhanced SHAP visualizations
 
 ### 🎯 Key Metrics
 
@@ -30,6 +32,7 @@ The Predictive Delivery Optimizer is a comprehensive machine learning solution t
 | **Carriers Monitored** | 5 (performance tracked) |
 | **Cost Reduction Potential** | 52% (carrier optimization) |
 | **Average Delay** | 1.77 days |
+| **Advanced Features** | 4 (Trends, Anomalies, Reports, SHAP) |
 
 ---
 
@@ -37,8 +40,9 @@ The Predictive Delivery Optimizer is a comprehensive machine learning solution t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Streamlit Dashboard                       │
-│  (Interactive UI with 3 Tabs: Dashboard, Predictions, Recs) │
+│                Streamlit Dashboard (5 Tabs)                  │
+│  Dashboard | Predictions | Recommendations | Trends |        │
+│  Anomaly Detection                                           │
 └────────────┬────────────────────────────────┬───────────────┘
              │                                │
     ┌────────▼────────┐              ┌───────▼──────────┐
@@ -54,8 +58,8 @@ The Predictive Delivery Optimizer is a comprehensive machine learning solution t
     └────────┬─────────────────────────────────────────────┘
              │
     ┌────────▼────────────────────────────────────────────┐
-    │        Recommendation Engine (12 Rules)              │
-    │  URGENT | HIGH RISK | MODERATE (Risk-based Actions) │
+    │     Advanced Analytics Suite (4 Modules)             │
+    │  Trends | Anomalies | Reports | SHAP Explainability │
     └──────────────────────────────────────────────────────┘
 ```
 
@@ -75,13 +79,16 @@ Optimized-Delivey-system/
 │
 ├── 🤖 predictive_delivery_optimizer/
 │   ├── __init__.py                      # Package initialization
-│   ├── app.py                           # Streamlit dashboard (main)
+│   ├── app.py                           # Streamlit dashboard (5 tabs)
 │   ├── data_loader.py                   # Multi-source data integration
 │   ├── feature_engineering.py           # 98 feature creation pipeline
 │   ├── model_training.py                # RandomForest + XGBoost training
 │   ├── visualization.py                 # Plotly interactive charts
 │   ├── recommendation_engine.py         # 12 rule-based recommendations
-│   ├── explainability.py                # SHAP model interpretability
+│   ├── explainability.py                # Enhanced SHAP with Plotly
+│   ├── trend_analysis.py                # ✨ Historical trend analysis
+│   ├── advanced_reporting.py            # ✨ Excel/HTML/PDF reports
+│   ├── anomaly_detection.py             # ✨ ML anomaly detection
 │   └── utils.py                         # Configuration & logging
 │
 ├── 📝 COMPLIANCE_VERIFICATION.md        # Requirements verification
@@ -135,7 +142,7 @@ cd predictive_delivery_optimizer
 streamlit run app.py
 ```
 
-The dashboard will open automatically at **http://localhost:8504**
+The dashboard will open automatically at **http://localhost:8501** (or the next available port)
 
 ---
 
@@ -155,6 +162,11 @@ The dashboard will open automatically at **http://localhost:8504**
 - 🎯 Priority analysis breakdown
 - 📉 Distance vs delay scatter plot
 
+**Advanced Reporting & Export** 
+- 📥 Export to Excel with multiple sheets (Summary, Performance, Carrier Analysis, Raw Data)
+- 📄 Generate professional HTML reports with executive summaries
+- 📋 View comprehensive executive summaries with key findings
+
 ### 2️⃣ Predictions Tab
 
 **ML Model Training & Prediction**
@@ -169,6 +181,12 @@ The dashboard will open automatically at **http://localhost:8504**
 - Average risk metrics
 - CSV export functionality
 
+**Enhanced SHAP Explainability** 
+- 📊 Interactive global feature importance (Plotly bar charts & summary plots)
+- 🔍 Individual prediction explanations (waterfall & force plots)
+- 📈 Feature dependence analysis with auto-interaction detection
+- 🎯 Instance-level SHAP value exploration
+
 ### 3️⃣ Recommendations Tab
 
 **Automated Corrective Actions**
@@ -179,7 +197,30 @@ The dashboard will open automatically at **http://localhost:8504**
 | ⚠️ **HIGH** | 60-80% | Carrier status check, logistics team alert, contingency planning |
 | ℹ️ **MODERATE** | 40-60% | Delivery monitoring, follow-up scheduling |
 
-### 4️⃣ Advanced Filters
+### 4️⃣ Trends & Analysis Tab ✨
+
+**Historical Trend Analysis**
+- 📈 Daily, weekly, monthly delay trends with moving averages
+- 🏢 Carrier performance trends over time
+- 📊 Trend direction detection (improving/worsening/stable)
+- 🎯 Best/worst performing day insights
+- 📉 Interactive Plotly time-series visualizations
+- 📊 Current vs average delay rate metrics
+- 🔍 Improvement rate calculation for trending patterns
+
+### 5️⃣ Anomaly Detection Tab ✨
+
+**Multi-Method Anomaly Detection**
+- 🤖 ML-based detection using Isolation Forest
+- 📊 Statistical outlier detection (IQR, Z-score)
+- ⏱️ Delivery time anomalies (excessive/suspiciously fast)
+- 💰 Cost anomalies by carrier
+- 🔍 Pattern anomalies (priority-delay mismatches)
+- 🚨 Critical anomaly alerts with severity levels
+- 📈 Anomaly rate by carrier visualization
+- 📋 Configurable contamination rate (1%-50%)
+
+### � Advanced Filters
 
 **Multi-dimensional Analysis**
 - **Carrier filter**: SpeedyLogistics, GlobalTransit, QuickShip, ReliableExpress, EcoDeliver
@@ -257,21 +298,6 @@ The dashboard will open automatically at **http://localhost:8504**
 | ❌ Generic recommendations | ✅ Risk-based action plans | 300% |
 | ⏱️ Days to analyze | ⏱️ Seconds to insights | 99%+ |
 
-### Cost Optimization
-
-**Carrier Performance Analysis:**
-- **Worst Performer:** SpeedyLogistics (78% delay rate)
-- **Best Performer:** QuickShip (26% delay rate)
-- **Potential Savings:** 52% reduction by carrier optimization
-
-**Cost Categories Tracked:**
-- Fuel costs
-- Labor costs
-- Vehicle maintenance
-- Insurance
-- Packaging
-- Technology platform fees
-- Other overhead
 
 ### Strategic Advantages
 
@@ -329,7 +355,25 @@ streamlit run app.py
 3. Expand each order for detailed action items
 4. Implement corrective measures
 
-### Step 6: Apply Filters (Optional)
+### Step 6: Analyze Trends
+1. Navigate to **"📈 Trends & Analysis"** tab
+2. Select time period (Daily/Weekly/Monthly)
+3. Review trend direction and insights
+4. Analyze carrier performance over time
+
+### Step 7: Detect Anomalies
+1. Switch to **"🚨 Anomaly Detection"** tab
+2. Adjust expected anomaly rate slider
+3. Review detected anomalies and severity levels
+4. Investigate critical anomalies requiring attention
+
+### Step 8: Generate Reports
+1. Go to **"📊 Dashboard"** tab
+2. Click **"📥 Export to Excel"** for comprehensive data export
+3. Or click **"📄 Generate HTML Report"** for professional reports
+4. Review executive summary with key findings
+
+### Step 9: Apply Filters (Optional)
 - Select specific carriers to analyze
 - Filter by customer segment (Enterprise/SMB/Individual)
 - Filter by priority level (High/Medium/Low)
@@ -337,7 +381,33 @@ streamlit run app.py
 
 ---
 
-## 🎯 Use Cases
+## � Recent Updates
+
+### Version 2.0 (October 2025)
+
+**✨ New Features Added:**
+- **Historical Trend Analysis**: Track delay patterns over time with daily/weekly/monthly views
+- **Enhanced SHAP Visualizations**: Interactive Plotly-based explainability with global/local insights
+- **Advanced Reporting**: Export to Excel with multi-sheet analysis and professional HTML reports
+- **Anomaly Detection**: ML-powered anomaly detection with multiple detection methods
+- **Executive Summaries**: Auto-generated insights and recommendations
+
+**🔧 Improvements:**
+- Streamlined dashboard from 7 to 5 focused tabs for better usability
+- Fixed trend analysis data structure for accurate metric display
+- Enhanced data flow architecture for consistent feature handling
+- Improved error handling and logging throughout the application
+- Updated SHAP integration with proper 2D array handling
+
+**🐛 Bug Fixes:**
+- Resolved trend summary key mismatch errors
+- Fixed SHAP DataFrame construction issues
+- Corrected duplicate Plotly chart key conflicts
+- Improved date handling in trend analysis
+
+---
+
+##  Use Cases
 
 ### 1. Daily Operations Management
 **Scenario:** Daily order review meeting  
@@ -345,19 +415,23 @@ streamlit run app.py
 
 ### 2. Carrier Performance Evaluation
 **Scenario:** Quarterly carrier contract review  
-**Action:** Analyze carrier performance metrics, negotiate better rates with underperformers
+**Action:** Analyze carrier performance metrics in Trends tab, identify underperformers, negotiate better rates
 
 ### 3. Proactive Customer Communication
 **Scenario:** High-risk order detected  
 **Action:** Use prediction probability to proactively notify customers, arrange alternatives
 
-### 4. Cost Optimization Analysis
-**Scenario:** Budget planning session  
-**Action:** Review cost breakdown by category, identify optimization opportunities
+### 4. Trend Analysis & Forecasting
+**Scenario:** Strategic planning session  
+**Action:** Review historical trends to identify seasonal patterns and plan resource allocation
 
-### 5. Route Optimization
-**Scenario:** Logistics planning  
-**Action:** Analyze distance vs delay patterns, optimize route assignments
+### 5. Anomaly Investigation
+**Scenario:** Quality assurance review  
+**Action:** Investigate detected anomalies to identify systemic issues or data quality problems
+
+### 6. Executive Reporting
+**Scenario:** Monthly board meeting  
+**Action:** Generate HTML/Excel reports with executive summary and key performance metrics
 
 ---
 
@@ -380,120 +454,3 @@ MEDIUM_RISK_THRESHOLD = 0.7
 HIGH_RISK_THRESHOLD = 0.7
 ```
 
-### Logging
-
-Logs are automatically generated in `predictive_delivery_optimizer/logs/` directory:
-- Format: `app_YYYYMMDD.log`
-- Level: INFO (configurable)
-- Includes: Data loading, feature engineering, model training, predictions
-
----
-
-## 🧪 Testing & Validation
-
-### Data Validation
-- ✅ 200 orders loaded successfully
-- ✅ No missing critical fields
-- ✅ Data types validated
-- ✅ Date parsing verified
-
-### Model Validation
-- ✅ Train/test split stratified
-- ✅ Cross-validation performed (5-fold)
-- ✅ Feature importance extracted
-- ✅ No data leakage
-
-### Integration Testing
-- ✅ All 7 data sources merge correctly
-- ✅ Feature engineering reproducible
-- ✅ Models train without errors
-- ✅ Dashboard renders successfully
-
----
-
-## 📚 Documentation
-
-- **[COMPLIANCE_VERIFICATION.md](COMPLIANCE_VERIFICATION.md)** - Detailed requirements verification
-- **Code Documentation** - Comprehensive docstrings in all modules
-- **Inline Comments** - Critical logic explained in code
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 👥 Authors
-
-**NexGen Logistics Development Team**
-- Project Lead: [Your Name]
-- Repository: [khan09faiz/Optimized-Delivey-system](https://github.com/khan09faiz/Optimized-Delivey-system)
-
----
-
-## 🙏 Acknowledgments
-
-- NexGen Logistics Pvt. Ltd. for providing business requirements
-- Open-source community for excellent ML libraries
-- Streamlit for the amazing dashboard framework
-
----
-
-## 📞 Support
-
-For issues, questions, or feature requests:
-- 🐛 **Bug Reports:** [GitHub Issues](https://github.com/khan09faiz/Optimized-Delivey-system/issues)
-- 💬 **Discussions:** [GitHub Discussions](https://github.com/khan09faiz/Optimized-Delivey-system/discussions)
-- 📧 **Email:** support@nexgenlogistics.com
-
----
-
-## 🚀 Roadmap
-
-### Planned Features
-- [ ] Real-time API integration
-- [ ] Email notification system for high-risk orders
-- [ ] Mobile-responsive dashboard
-- [ ] Multi-language support
-- [ ] Advanced SHAP visualizations
-- [ ] Automated model retraining scheduler
-- [ ] Integration with existing ERP systems
-- [ ] Custom alert thresholds per carrier
-
----
-
-## 📊 Statistics
-
-```
-📦 Total Lines of Code: ~2,500
-🧪 Test Coverage: 100% (manual validation)
-📁 Data Sources: 7 CSV files
-🤖 ML Models: 2 (RandomForest + XGBoost)
-📈 Features Engineered: 98
-⚡ Prediction Time: <1 second
-🎯 Accuracy: 100%
-```
-
----
-
-<div align="center">
-
-**Built with ❤️ for NexGen Logistics**
-
-[⬆ Back to Top](#-predictive-delivery-optimizer)
-
-</div>
