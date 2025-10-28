@@ -513,6 +513,314 @@ class Visualizer:
         )
         
         return fig
+    
+    def plot_order_value_distribution(self, df: pd.DataFrame) -> go.Figure:
+        """
+        Plot order value distribution with delay breakdown.
+        
+        Args:
+            df: DataFrame with order_value and delay_flag columns
+            
+        Returns:
+            Plotly figure
+        """
+        logger.info("Creating order value distribution plot...")
+        
+        if 'order_value_inr' not in df.columns:
+            logger.warning("order_value_inr column not found")
+            return go.Figure()
+        
+        # Create value bins
+        df_copy = df.copy()
+        df_copy['value_range'] = pd.cut(
+            df_copy['order_value_inr'], 
+            bins=[0, 1000, 2000, 3000, 4000, 5000],
+            labels=['₹0-1K', '₹1K-2K', '₹2K-3K', '₹3K-4K', '₹4K+']
+        )
+        
+        # Count by value range and delay status
+        if 'delay_flag' in df_copy.columns:
+            value_delay = df_copy.groupby(['value_range', 'delay_flag']).size().unstack(fill_value=0)
+            
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                name='On-Time',
+                x=value_delay.index.astype(str),
+                y=value_delay[0] if 0 in value_delay.columns else [],
+                marker_color='#28a745'
+            ))
+            fig.add_trace(go.Bar(
+                name='Delayed',
+                x=value_delay.index.astype(str),
+                y=value_delay[1] if 1 in value_delay.columns else [],
+                marker_color='#dc3545'
+            ))
+            
+            fig.update_layout(
+                title='Order Value Distribution by Delivery Status',
+                xaxis_title='Order Value Range',
+                yaxis_title='Number of Orders',
+                barmode='stack',
+                height=400
+            )
+        else:
+            value_counts = df_copy['value_range'].value_counts().sort_index()
+            fig = go.Figure(data=[
+                go.Bar(x=value_counts.index.astype(str), y=value_counts.values, marker_color='#4ECDC4')
+            ])
+            fig.update_layout(
+                title='Order Value Distribution',
+                xaxis_title='Order Value Range',
+                yaxis_title='Number of Orders',
+                height=400
+            )
+        
+        return fig
+    
+    def plot_delivery_time_analysis(self, df: pd.DataFrame) -> go.Figure:
+        """
+        Plot actual vs promised delivery time analysis.
+        
+        Args:
+            df: DataFrame with delivery time columns
+            
+        Returns:
+            Plotly figure
+        """
+        logger.info("Creating delivery time analysis plot...")
+        
+        if 'promised_delivery_days' not in df.columns or 'actual_delivery_days' not in df.columns:
+            logger.warning("Delivery time columns not found")
+            return go.Figure()
+        
+        fig = go.Figure()
+        
+        # Scatter plot
+        fig.add_trace(go.Scatter(
+            x=df['promised_delivery_days'],
+            y=df['actual_delivery_days'],
+            mode='markers',
+            marker=dict(
+                size=8,
+                color=df.get('delay_flag', 0),
+                colorscale=[[0, '#28a745'], [1, '#dc3545']],
+                showscale=True,
+                colorbar=dict(title='Delayed')
+            ),
+            text=[f"Order: {i}<br>Promised: {p}d<br>Actual: {a}d" 
+                  for i, p, a in zip(df.index, df['promised_delivery_days'], df['actual_delivery_days'])],
+            hovertemplate='%{text}<extra></extra>'
+        ))
+        
+        # Add perfect delivery line (y=x)
+        max_days = max(df['promised_delivery_days'].max(), df['actual_delivery_days'].max())
+        fig.add_trace(go.Scatter(
+            x=[0, max_days],
+            y=[0, max_days],
+            mode='lines',
+            line=dict(dash='dash', color='gray'),
+            name='Perfect Delivery',
+            showlegend=True
+        ))
+        
+        fig.update_layout(
+            title='Promised vs Actual Delivery Time',
+            xaxis_title='Promised Delivery (days)',
+            yaxis_title='Actual Delivery (days)',
+            height=450
+        )
+        
+        return fig
+    
+    def plot_traffic_impact(self, df: pd.DataFrame) -> go.Figure:
+        """
+        Plot traffic delay impact on delivery.
+        
+        Args:
+            df: DataFrame with traffic_delay_minutes column
+            
+        Returns:
+            Plotly figure
+        """
+        logger.info("Creating traffic impact plot...")
+        
+        if 'traffic_delay_minutes' not in df.columns:
+            logger.warning("traffic_delay_minutes column not found")
+            return go.Figure()
+        
+        # Create traffic delay bins
+        df_copy = df.copy()
+        df_copy['traffic_category'] = pd.cut(
+            df_copy['traffic_delay_minutes'],
+            bins=[-1, 0, 15, 30, 60, float('inf')],
+            labels=['No Delay', 'Low (1-15min)', 'Medium (15-30min)', 'High (30-60min)', 'Severe (60min+)']
+        )
+        
+        if 'delay_flag' in df_copy.columns:
+            traffic_delay = df_copy.groupby(['traffic_category', 'delay_flag']).size().unstack(fill_value=0)
+            
+            # Calculate delay rate
+            delay_rate = (traffic_delay[1] / (traffic_delay[0] + traffic_delay[1]) * 100).round(1)
+            
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            # Stacked bars
+            fig.add_trace(
+                go.Bar(name='On-Time', x=traffic_delay.index.astype(str), 
+                       y=traffic_delay[0] if 0 in traffic_delay.columns else [],
+                       marker_color='#28a745'),
+                secondary_y=False
+            )
+            fig.add_trace(
+                go.Bar(name='Delayed', x=traffic_delay.index.astype(str),
+                       y=traffic_delay[1] if 1 in traffic_delay.columns else [],
+                       marker_color='#dc3545'),
+                secondary_y=False
+            )
+            
+            # Delay rate line
+            fig.add_trace(
+                go.Scatter(name='Delay Rate', x=delay_rate.index.astype(str), y=delay_rate.values,
+                          mode='lines+markers', line=dict(color='#FF6B6B', width=3),
+                          marker=dict(size=10)),
+                secondary_y=True
+            )
+            
+            fig.update_layout(
+                title='Traffic Delay Impact on Delivery Performance',
+                xaxis_title='Traffic Delay Category',
+                barmode='stack',
+                height=400
+            )
+            fig.update_yaxes(title_text="Number of Orders", secondary_y=False)
+            fig.update_yaxes(title_text="Delay Rate (%)", secondary_y=True)
+        else:
+            traffic_counts = df_copy['traffic_category'].value_counts().sort_index()
+            fig = go.Figure(data=[
+                go.Bar(x=traffic_counts.index.astype(str), y=traffic_counts.values, marker_color='#FF9F43')
+            ])
+            fig.update_layout(
+                title='Traffic Delay Distribution',
+                xaxis_title='Traffic Delay Category',
+                yaxis_title='Number of Orders',
+                height=400
+            )
+        
+        return fig
+    
+    def plot_customer_segment_analysis(self, df: pd.DataFrame) -> go.Figure:
+        """
+        Plot customer segment performance.
+        
+        Args:
+            df: DataFrame with customer_segment column
+            
+        Returns:
+            Plotly figure
+        """
+        logger.info("Creating customer segment analysis plot...")
+        
+        if 'customer_segment' not in df.columns:
+            logger.warning("customer_segment column not found")
+            return go.Figure()
+        
+        segment_stats = df.groupby('customer_segment').agg({
+            'order_id': 'count',
+            'delay_flag': 'mean' if 'delay_flag' in df.columns else 'count',
+            'order_value_inr': 'mean' if 'order_value_inr' in df.columns else 'count'
+        }).round(2)
+        
+        segment_stats.columns = ['Orders', 'Delay_Rate', 'Avg_Value']
+        
+        fig = make_subplots(
+            rows=1, cols=3,
+            subplot_titles=('Order Volume', 'Delay Rate (%)', 'Avg Order Value (₹)'),
+            specs=[[{'type': 'bar'}, {'type': 'bar'}, {'type': 'bar'}]]
+        )
+        
+        # Order volume
+        fig.add_trace(
+            go.Bar(x=segment_stats.index, y=segment_stats['Orders'], 
+                   marker_color='#4ECDC4', name='Orders'),
+            row=1, col=1
+        )
+        
+        # Delay rate
+        fig.add_trace(
+            go.Bar(x=segment_stats.index, y=segment_stats['Delay_Rate']*100, 
+                   marker_color='#FF6B6B', name='Delay %'),
+            row=1, col=2
+        )
+        
+        # Average value
+        fig.add_trace(
+            go.Bar(x=segment_stats.index, y=segment_stats['Avg_Value'], 
+                   marker_color='#95E1D3', name='Avg Value'),
+            row=1, col=3
+        )
+        
+        fig.update_layout(
+            title_text='Customer Segment Performance Analysis',
+            showlegend=False,
+            height=400
+        )
+        
+        return fig
+    
+    def plot_weather_impact(self, df: pd.DataFrame) -> go.Figure:
+        """
+        Plot weather impact on deliveries.
+        
+        Args:
+            df: DataFrame with weather_impact column
+            
+        Returns:
+            Plotly figure
+        """
+        logger.info("Creating weather impact plot...")
+        
+        if 'weather_impact' not in df.columns:
+            logger.warning("weather_impact column not found")
+            return go.Figure()
+        
+        weather_stats = df.groupby('weather_impact').agg({
+            'order_id': 'count',
+            'delay_flag': 'mean' if 'delay_flag' in df.columns else 'count'
+        }).round(3)
+        
+        weather_stats.columns = ['Count', 'Delay_Rate']
+        weather_stats = weather_stats.sort_values('Delay_Rate', ascending=False)
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Bar(
+            x=weather_stats.index,
+            y=weather_stats['Count'],
+            name='Orders',
+            marker_color='#74B9FF',
+            yaxis='y'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=weather_stats.index,
+            y=weather_stats['Delay_Rate'] * 100,
+            name='Delay Rate (%)',
+            mode='lines+markers',
+            line=dict(color='#FD79A8', width=3),
+            marker=dict(size=10),
+            yaxis='y2'
+        ))
+        
+        fig.update_layout(
+            title='Weather Impact on Delivery Performance',
+            xaxis=dict(title='Weather Condition'),
+            yaxis=dict(title='Number of Orders', side='left'),
+            yaxis2=dict(title='Delay Rate (%)', side='right', overlaying='y'),
+            height=400,
+            hovermode='x unified'
+        )
+        
+        return fig
 
 
 # ==================== Convenience Functions ====================

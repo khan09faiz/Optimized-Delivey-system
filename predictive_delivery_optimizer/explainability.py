@@ -141,7 +141,7 @@ class ExplainabilityAnalyzer:
             importance_values = importance_values.flatten()
         
         feature_importance = pd.DataFrame({
-            'feature': X.columns,
+            'feature': [str(col) for col in X.columns],  # Convert to list of strings
             'importance': importance_values
         }).sort_values('importance', ascending=False).head(top_n)
         
@@ -172,11 +172,16 @@ class ExplainabilityAnalyzer:
         # Get SHAP values for the instance
         instance_shap = self.shap_values[instance_idx]
         
+        # Ensure all arrays are 1D
+        features = [str(col) for col in X.columns]
+        values = np.array(X.iloc[instance_idx].values).flatten()
+        shap_vals = np.array(instance_shap).flatten()
+        
         # Create explanation DataFrame
         explanation = pd.DataFrame({
-            'feature': X.columns,
-            'value': X.iloc[instance_idx].values,
-            'shap_value': instance_shap
+            'feature': features,
+            'value': values,
+            'shap_value': shap_vals
         }).sort_values('shap_value', key=abs, ascending=False)
         
         return explanation
@@ -421,7 +426,7 @@ class ExplainabilityAnalyzer:
         fig = go.Figure()
         
         for idx in top_indices:
-            feature_name = X.columns[idx]
+            feature_name = str(X.columns[idx])  # Convert to string to avoid pandas Index
             shap_vals = self.shap_values[:, idx]
             feature_vals = X.iloc[:, idx].values
             
@@ -680,6 +685,11 @@ class ExplainabilityAnalyzer:
         """
         logger.info(f"Creating interactive dependence plot for {feature}...")
         
+        # Ensure feature is a string, not an Index or other type
+        feature = str(feature)
+        if interaction_feature is not None:
+            interaction_feature = str(interaction_feature)
+        
         if self.shap_values is None:
             self.compute_shap_values(X)
         
@@ -699,7 +709,7 @@ class ExplainabilityAnalyzer:
         # Determine color variable
         if interaction_feature and interaction_feature in X.columns:
             color_values = X_sample[interaction_feature].values
-            color_label = interaction_feature
+            color_label = str(interaction_feature)
         else:
             # Auto-select interaction feature (highest correlation with SHAP values)
             correlations = []
@@ -710,6 +720,8 @@ class ExplainabilityAnalyzer:
             
             if correlations:
                 interaction_feature = max(correlations, key=lambda x: x[1])[0]
+                # Ensure interaction_feature is a string
+                interaction_feature = str(interaction_feature)
                 color_values = X_sample[interaction_feature].values
                 color_label = f"{interaction_feature} (auto)"
             else:
@@ -762,6 +774,68 @@ class ExplainabilityAnalyzer:
             yaxis_title=f'SHAP Value for {feature}',
             height=500,
             template='plotly_white'
+        )
+        
+        return fig
+    
+    def plot_feature_impact_simple(
+        self,
+        X: pd.DataFrame,
+        top_n: int = 15
+    ) -> go.Figure:
+        """
+        Create a simple, clean feature impact visualization.
+        
+        Args:
+            X: Data to analyze
+            top_n: Number of top features to display
+            
+        Returns:
+            Plotly figure
+        """
+        logger.info("Creating simple feature impact chart...")
+        
+        importance_df = self.get_global_importance(X, top_n)
+        
+        # Create a clean horizontal bar chart
+        fig = go.Figure()
+        
+        colors = ['#FF6B6B' if i < 5 else '#4ECDC4' if i < 10 else '#95E1D3' 
+                  for i in range(len(importance_df))]
+        
+        fig.add_trace(go.Bar(
+            y=importance_df['feature'],
+            x=importance_df['importance'],
+            orientation='h',
+            marker=dict(
+                color=colors,
+                line=dict(color='white', width=1)
+            ),
+            text=[f"{val:.4f}" for val in importance_df['importance']],
+            textposition='outside',
+            hovertemplate='<b>%{y}</b><br>Impact: %{x:.4f}<extra></extra>'
+        ))
+        
+        fig.update_layout(
+            title={
+                'text': f'🎯 Top {top_n} Most Important Features',
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 20, 'color': '#2C3E50'}
+            },
+            xaxis=dict(
+                title='Feature Importance (Mean |SHAP Value|)',
+                showgrid=True,
+                gridcolor='#E8E8E8'
+            ),
+            yaxis=dict(
+                title='',
+                categoryorder='total ascending'
+            ),
+            height=max(400, top_n * 35),
+            template='plotly_white',
+            showlegend=False,
+            margin=dict(l=150, r=100, t=80, b=60)
         )
         
         return fig

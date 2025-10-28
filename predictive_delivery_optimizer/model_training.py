@@ -16,13 +16,16 @@ from typing import Dict, Tuple, Any, Optional, List
 import joblib
 import json
 
-from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     classification_report, confusion_matrix, roc_auc_score,
     f1_score, precision_score, recall_score, roc_curve,
-    precision_recall_curve, average_precision_score
+    precision_recall_curve, average_precision_score, make_scorer
 )
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
+from imblearn.pipeline import Pipeline as ImbPipeline
 import xgboost as xgb
 import streamlit as st
 
@@ -278,6 +281,175 @@ class ModelTrainer:
         }
         
         logger.info(f"CV Results - ROC-AUC: {cv_results['roc_auc_mean']:.4f} ± {cv_results['roc_auc_std']:.4f}")
+        
+        return cv_results
+    
+    def check_class_imbalance(self, y: pd.Series) -> Dict[str, Any]:
+        """
+        Check for class imbalance in the target variable.
+        
+        Args:
+            y: Target variable
+            
+        Returns:
+            Dictionary with imbalance metrics
+        """
+        logger.info("Checking class imbalance...")
+        
+        class_counts = y.value_counts()
+        total = len(y)
+        
+        imbalance_info = {
+            'class_counts': class_counts.to_dict(),
+            'class_percentages': (class_counts / total * 100).round(2).to_dict(),
+            'imbalance_ratio': class_counts.max() / class_counts.min(),
+            'is_imbalanced': (class_counts.max() / class_counts.min()) > 1.5
+        }
+        
+        logger.info(f"Class distribution: {imbalance_info['class_percentages']}")
+        logger.info(f"Imbalance ratio: {imbalance_info['imbalance_ratio']:.2f}")
+        
+        if imbalance_info['is_imbalanced']:
+            logger.warning("⚠️ Dataset is imbalanced! Consider using SMOTE or class weights.")
+        
+        return imbalance_info
+    
+    def apply_smote(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        sampling_strategy: str = 'auto'
+    ) -> Tuple[pd.DataFrame, pd.Series]:
+        """
+        Apply SMOTE to balance classes.
+        
+        Args:
+            X_train: Training features
+            y_train: Training labels
+            sampling_strategy: SMOTE sampling strategy
+            
+        Returns:
+            Balanced X_train, y_train
+        """
+        logger.info("Applying SMOTE for class balancing...")
+        
+        original_counts = y_train.value_counts().to_dict()
+        logger.info(f"Original distribution: {original_counts}")
+        
+        smote = SMOTE(random_state=self.random_state, sampling_strategy=sampling_strategy)
+        X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+        
+        new_counts = pd.Series(y_resampled).value_counts().to_dict()
+        logger.info(f"After SMOTE: {new_counts}")
+        
+        return pd.DataFrame(X_resampled, columns=X_train.columns), pd.Series(y_resampled)
+    
+    def train_with_cross_validation_detailed(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        model_type: str = 'RandomForest',
+        n_splits: int = 5,
+        use_smote: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Train model with detailed cross-validation and handle imbalance.
+        
+        Args:
+            X: Features
+            y: Target
+            model_type: 'RandomForest' or 'XGBoost'
+            n_splits: Number of CV folds
+            use_smote: Whether to apply SMOTE
+            
+        Returns:
+            Dictionary with detailed CV results
+        """
+        logger.info(f"Training {model_type} with {n_splits}-fold cross-validation...")
+        
+        # Check class imbalance
+        imbalance_info = self.check_class_imbalance(y)
+        
+        # Setup stratified k-fold
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=self.random_state)
+        
+        cv_results = {
+            'fold_scores': [],
+            'fold_predictions': [],
+            'fold_metrics': [],
+            'imbalance_info': imbalance_info
+        }
+        
+        for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), 1):
+            logger.info(f"Training fold {fold}/{n_splits}...")
+            
+            X_fold_train, X_fold_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_fold_train, y_fold_val = y.iloc[train_idx], y.iloc[val_idx]
+            
+            # Apply SMOTE if requested
+            if use_smote and imbalance_info['is_imbalanced']:
+                X_fold_train, y_fold_train = self.apply_smote(X_fold_train, y_fold_train)
+            
+            # Train model
+            if model_type == 'RandomForest':
+                model = RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=10,
+                    min_samples_split=10,
+                    min_samples_leaf=5,
+                    random_state=self.random_state,
+                    n_jobs=-1,
+                    class_weight='balanced'
+                )
+            else:
+                neg_count = (y_fold_train == 0).sum()
+                pos_count = (y_fold_train == 1).sum()
+                scale_pos_weight = neg_count / pos_count if pos_count > 0 else 1
+                
+                model = xgb.XGBClassifier(
+                    n_estimators=100,
+                    max_depth=6,
+                    learning_rate=0.1,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=self.random_state,
+                    scale_pos_weight=scale_pos_weight,
+                    eval_metric='logloss'
+                )
+            
+            model.fit(X_fold_train, y_fold_train)
+            
+            # Evaluate on validation fold
+            y_pred = model.predict(X_fold_val)
+            y_pred_proba = model.predict_proba(X_fold_val)[:, 1]
+            
+            fold_metrics = {
+                'fold': fold,
+                'accuracy': (y_pred == y_fold_val).mean(),
+                'precision': precision_score(y_fold_val, y_pred, zero_division=0),
+                'recall': recall_score(y_fold_val, y_pred, zero_division=0),
+                'f1': f1_score(y_fold_val, y_pred, zero_division=0),
+                'roc_auc': roc_auc_score(y_fold_val, y_pred_proba)
+            }
+            
+            cv_results['fold_scores'].append(fold_metrics['roc_auc'])
+            cv_results['fold_metrics'].append(fold_metrics)
+            
+            logger.info(f"Fold {fold} - ROC-AUC: {fold_metrics['roc_auc']:.4f}, F1: {fold_metrics['f1']:.4f}")
+        
+        # Calculate mean and std
+        scores_array = np.array(cv_results['fold_scores'])
+        cv_results['mean_score'] = scores_array.mean()
+        cv_results['std_score'] = scores_array.std()
+        cv_results['cv_scores'] = scores_array.tolist()
+        
+        logger.info(f"Cross-Validation Results:")
+        logger.info(f"  Mean ROC-AUC: {cv_results['mean_score']:.4f} ± {cv_results['std_score']:.4f}")
+        logger.info(f"  Scores: {[f'{s:.4f}' for s in cv_results['fold_scores']]}")
+        
+        # Check for overfitting
+        if cv_results['std_score'] > 0.1:
+            logger.warning("⚠️ High variance in CV scores - possible overfitting!")
         
         return cv_results
     

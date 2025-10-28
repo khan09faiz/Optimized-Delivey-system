@@ -18,6 +18,7 @@ from explainability import ExplainabilityAnalyzer
 from trend_analysis import TrendAnalyzer
 from advanced_reporting import ReportGenerator
 from anomaly_detection import AnomalyDetector
+from customer_insights import CustomerInsights, OrderTracker, get_customer_dashboard_data
 from utils import Config, setup_logging, get_risk_category, format_currency, format_percentage
 
 logger = setup_logging("streamlit_app")
@@ -44,6 +45,10 @@ def main():
     # Initialize session state
     if 'data_loaded' not in st.session_state:
         st.session_state.data_loaded = False
+    if 'show_predictions' not in st.session_state:
+        st.session_state.show_predictions = False
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = 0
     
     # Sidebar
     st.sidebar.title("⚙️ Configuration")
@@ -124,6 +129,13 @@ def main():
     
     # Model Training
     st.sidebar.markdown("### 🤖 Model Training")
+    
+    # Cross-validation option
+    use_cv = st.sidebar.checkbox("Use Cross-Validation", value=True, 
+                                  help="Recommended to prevent overfitting")
+    use_smote = st.sidebar.checkbox("Handle Class Imbalance (SMOTE)", value=True,
+                                     help="Balance classes if data is skewed")
+    
     if st.sidebar.button("🚀 Train Models"):
         with st.spinner("Training models..."):
             try:
@@ -134,33 +146,95 @@ def main():
                 X = filtered_df[feature_cols].fillna(0)
                 y = filtered_df['delay_flag']
                 
-                # Split data for training
-                from sklearn.model_selection import train_test_split
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42, stratify=y
-                )
-                
-                # Train
+                # Create trainer
                 trainer = ModelTrainer()
+                
+                # Check class imbalance
+                imbalance_info = trainer.check_class_imbalance(y)
+                st.sidebar.info(f"📊 Class Distribution:\n"
+                               f"Class 0: {imbalance_info['class_percentages'][0]:.1f}%\n"
+                               f"Class 1: {imbalance_info['class_percentages'][1]:.1f}%\n"
+                               f"Ratio: {imbalance_info['imbalance_ratio']:.2f}")
+                
+                if use_cv:
+                    # Cross-validation approach
+                    st.sidebar.write("Running 5-fold cross-validation...")
+                    
+                    cv_results = trainer.train_with_cross_validation_detailed(
+                        X, y, 
+                        model_type='RandomForest',
+                        n_splits=5,
+                        use_smote=use_smote
+                    )
+                    
+                    st.sidebar.success(f"✅ CV Mean ROC-AUC: {cv_results['mean_score']:.4f} ± {cv_results['std_score']:.4f}")
+                    
+                    # Store CV results
+                    st.session_state.cv_results = cv_results
+                    
+                    # Train final model on full data
+                    if use_smote and imbalance_info['is_imbalanced']:
+                        X_balanced, y_balanced = trainer.apply_smote(X, y)
+                    else:
+                        X_balanced, y_balanced = X, y
+                    
+                    # Split for evaluation
+                    from sklearn.model_selection import train_test_split
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X_balanced, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
+                    )
+                else:
+                    # Traditional train/test split
+                    from sklearn.model_selection import train_test_split
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=0.2, random_state=42, stratify=y
+                    )
+                    
+                    if use_smote:
+                        X_train, y_train = trainer.apply_smote(X_train, y_train)
+                
+                # Train final models
                 results = trainer.train_and_evaluate_all(X_train, X_test, y_train, y_test)
                 
                 # Store in session
                 st.session_state.trainer = trainer
                 st.session_state.feature_cols = feature_cols
+                st.session_state.imbalance_info = imbalance_info
                 
-                st.sidebar.success("✅ Models trained!")
+                # Set flag to switch to predictions tab
+                st.session_state.show_predictions = True
+                
+                st.sidebar.success("✅ Models trained successfully! Switching to Predictions...")
+                
+                # Force a rerun to trigger tab switch
+                st.rerun()
+                
             except Exception as e:
                 st.sidebar.error(f"Training error: {str(e)}")
                 logger.error(f"Training error: {str(e)}", exc_info=True)
     
     # Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Dashboard", 
         "🎯 Predictions", 
         "💡 Recommendations",
         "📈 Trends & Analysis",
-        "🔍 Anomaly Detection"
+        "🔍 Anomaly Detection",
+        "👤 Customer Insights & Tracking"
     ])
+    
+    # Auto-switch to Predictions tab after training
+    if st.session_state.get('show_predictions', False):
+        st.session_state.show_predictions = False  # Reset flag
+        st.markdown("""
+        <script>
+            // Find and click the Predictions tab
+            const tabs = parent.document.querySelectorAll('button[data-baseweb="tab"]');
+            if (tabs.length >= 2) {
+                tabs[1].click();  // Index 1 is the Predictions tab
+            }
+        </script>
+        """, unsafe_allow_html=True)
     
     # ==================== Tab 1: Dashboard ====================
     with tab1:
@@ -183,27 +257,66 @@ def main():
         # Visualizations
         viz = Visualizer()
         
+        # Row 1: Core Metrics
+        st.subheader("📊 Delivery Performance Overview")
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("Delay Distribution")
+            st.write("**Delay Distribution**")
             fig = viz.plot_delay_distribution(filtered_df)
             st.plotly_chart(fig, use_container_width=True, key="dashboard_delay_dist")
         
         with col2:
-            st.subheader("Carrier Performance")
+            st.write("**Carrier Performance**")
             fig = viz.plot_carrier_performance(filtered_df)
             st.plotly_chart(fig, use_container_width=True, key="dashboard_carrier_perf")
         
+        # Row 2: Priority and Distance
         col3, col4 = st.columns(2)
         with col3:
-            st.subheader("Priority Analysis")
+            st.write("**Priority Analysis**")
             fig = viz.plot_priority_analysis(filtered_df)
             st.plotly_chart(fig, use_container_width=True, key="dashboard_priority")
         
         with col4:
-            st.subheader("Distance vs Delay")
+            st.write("**Distance vs Delay**")
             fig = viz.plot_distance_vs_delay(filtered_df)
             st.plotly_chart(fig, use_container_width=True, key="dashboard_distance")
+        
+        st.markdown("---")
+        
+        # Row 3: New Visualizations
+        st.subheader("💰 Order Value & Customer Insights")
+        col5, col6 = st.columns(2)
+        with col5:
+            st.write("**Order Value Distribution**")
+            fig = viz.plot_order_value_distribution(filtered_df)
+            st.plotly_chart(fig, use_container_width=True, key="dashboard_order_value")
+        
+        with col6:
+            st.write("**Customer Segment Performance**")
+            fig = viz.plot_customer_segment_analysis(filtered_df)
+            st.plotly_chart(fig, use_container_width=True, key="dashboard_customer_segment")
+        
+        st.markdown("---")
+        
+        # Row 4: Operational Factors
+        st.subheader("🚦 Operational Impact Analysis")
+        col7, col8 = st.columns(2)
+        with col7:
+            st.write("**Traffic Impact on Deliveries**")
+            fig = viz.plot_traffic_impact(filtered_df)
+            st.plotly_chart(fig, use_container_width=True, key="dashboard_traffic")
+        
+        with col8:
+            st.write("**Weather Impact**")
+            fig = viz.plot_weather_impact(filtered_df)
+            st.plotly_chart(fig, use_container_width=True, key="dashboard_weather")
+        
+        # Row 5: Delivery Time Analysis
+        st.markdown("---")
+        st.subheader("⏱️ Delivery Time Performance")
+        fig = viz.plot_delivery_time_analysis(filtered_df)
+        st.plotly_chart(fig, use_container_width=True, key="dashboard_delivery_time")
         
         # Report Export Section
         st.markdown("---")
@@ -263,6 +376,45 @@ def main():
         else:
             trainer = st.session_state.trainer
             feature_cols = st.session_state.feature_cols
+            
+            # Show Model Validation Info
+            with st.expander("📊 Model Validation & Class Balance Info", expanded=False):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write("**Class Distribution**")
+                    if 'imbalance_info' in st.session_state:
+                        imb_info = st.session_state.imbalance_info
+                        st.metric("Imbalance Ratio", f"{imb_info['imbalance_ratio']:.2f}")
+                        st.write(f"Class 0: {imb_info['class_percentages'][0]:.1f}%")
+                        st.write(f"Class 1: {imb_info['class_percentages'][1]:.1f}%")
+                        
+                        if imb_info['is_imbalanced']:
+                            st.warning("⚠️ Dataset is imbalanced")
+                        else:
+                            st.success("✅ Dataset is balanced")
+                
+                with col2:
+                    st.write("**Cross-Validation Results**")
+                    if 'cv_results' in st.session_state:
+                        cv_res = st.session_state.cv_results
+                        st.metric("Mean ROC-AUC", 
+                                f"{cv_res['mean_score']:.4f} ± {cv_res['std_score']:.4f}")
+                        
+                        # Show fold scores
+                        fold_scores = cv_res['fold_scores']
+                        st.write("Fold Scores:")
+                        for i, score in enumerate(fold_scores, 1):
+                            st.write(f"  Fold {i}: {score:.4f}")
+                        
+                        if cv_res['std_score'] > 0.1:
+                            st.warning("⚠️ High variance - possible overfitting")
+                        else:
+                            st.success("✅ Good model stability")
+                    else:
+                        st.info("Cross-validation not performed")
+            
+            st.markdown("---")
             
             # Prepare data for prediction
             X = filtered_df[feature_cols].fillna(0)
@@ -325,47 +477,34 @@ def main():
                         st.session_state.explainer = explainer
                         st.session_state.X_test = X_test
                         
-                        # Global importance
-                        st.subheader("Global Feature Importance")
+                        # Feature Impact Overview
+                        st.subheader("📊 Feature Impact Analysis")
                         
-                        col1, col2 = st.columns(2)
+                        # Simple clean visualization
+                        fig_impact = explainer.plot_feature_impact_simple(X_test, top_n=15)
+                        st.plotly_chart(fig_impact, use_container_width=True, key="shap_impact_simple")
                         
-                        with col1:
-                            st.write("**Interactive Bar Chart**")
-                            fig_bar = explainer.plot_shap_bar_interactive(X_test, top_n=15)
-                            st.plotly_chart(fig_bar, use_container_width=True, key="shap_bar_chart")
-                        
-                        with col2:
-                            st.write("**Summary Plot**")
-                            fig_summary = explainer.plot_shap_summary_interactive(X_test, max_display=15)
-                            st.plotly_chart(fig_summary, use_container_width=True, key="shap_summary_chart")
-                        
-                        # Instance-level explanation
-                        st.subheader("Individual Prediction Explanation")
-                        
-                        instance_idx = st.number_input(
-                            "Select Instance Index", 
-                            0, len(X_test)-1, 0
-                        )
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.write("**Waterfall Plot**")
-                            fig_waterfall = explainer.plot_shap_waterfall_interactive(X_test, instance_idx)
-                            st.plotly_chart(fig_waterfall, use_container_width=True, key="shap_waterfall_chart")
-                        
-                        with col2:
-                            st.write("**Force Plot**")
-                            fig_force = explainer.plot_shap_force_interactive(X_test, instance_idx)
-                            st.plotly_chart(fig_force, use_container_width=True, key="shap_force_chart")
+                        # Detailed views in expander
+                        with st.expander("🔍 Show Detailed SHAP Visualizations"):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.write("**Bar Chart View**")
+                                fig_bar = explainer.plot_shap_bar_interactive(X_test, top_n=15)
+                                st.plotly_chart(fig_bar, use_container_width=True, key="shap_bar_chart")
+                            
+                            with col2:
+                                st.write("**Summary Plot**")
+                                fig_summary = explainer.plot_shap_summary_interactive(X_test, max_display=15)
+                                st.plotly_chart(fig_summary, use_container_width=True, key="shap_summary_chart")
                         
                         # Feature dependence
-                        st.subheader("Feature Dependence Analysis")
+                        st.subheader("🔗 Feature Dependence Analysis")
+                        st.caption("See how each feature value affects predictions")
                         
                         importance_df = explainer.get_global_importance(X_test, top_n=10)
                         selected_feature = st.selectbox(
-                            "Select Feature for Dependence Analysis",
+                            "Select Feature to Analyze",
                             importance_df['feature'].tolist()
                         )
                         
@@ -587,6 +726,231 @@ def main():
         except Exception as e:
             st.error(f"Error in anomaly detection: {str(e)}")
             logger.error(f"Anomaly detection error: {str(e)}", exc_info=True)
+    
+    # ==================== Tab 6: Customer Insights & Tracking ====================
+    with tab6:
+        st.header("👤 Customer Insights & Order Tracking")
+        st.markdown("**Personalized recommendations and real-time order tracking for customers**")
+        
+        # Order Selection
+        st.subheader("Select Your Order")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            order_options = filtered_raw_df['order_id'].unique() if 'order_id' in filtered_raw_df.columns else []
+            selected_order_id = st.selectbox(
+                "Choose Order ID",
+                options=order_options,
+                help="Select an order to view detailed insights and tracking"
+            )
+        
+        with col2:
+            st.info(f"**{len(order_options)}** orders available")
+        
+        if selected_order_id:
+            # Get order data
+            order_data = filtered_raw_df[filtered_raw_df['order_id'] == selected_order_id].iloc[0]
+            
+            # Add delay probability if predictions exist
+            if 'trainer' in st.session_state:
+                order_features = filtered_df[filtered_df.index == order_data.name][st.session_state.feature_cols].fillna(0)
+                _, probabilities = st.session_state.trainer.predict(order_features)
+                order_data['delay_probability'] = probabilities[0]
+            else:
+                order_data['delay_probability'] = 0.0
+            
+            # Get comprehensive insights
+            insights_gen = CustomerInsights()
+            tracker = OrderTracker()
+            
+            st.markdown("---")
+            
+            # ============ Section 1: Order Status Overview ============
+            st.subheader("📦 Order Status Overview")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            col1.metric("Order ID", selected_order_id)
+            col2.metric("Carrier", order_data.get('carrier', 'N/A'))
+            col3.metric("Priority", order_data.get('priority', 'Standard'))
+            
+            delay_prob = order_data.get('delay_probability', 0)
+            risk_cat = get_risk_category(delay_prob)
+            risk_color = '🔴' if risk_cat == 'High' else '🟡' if risk_cat == 'Moderate' else '🟢'
+            col4.metric("Delay Risk", f"{risk_color} {risk_cat}", f"{delay_prob:.1%}")
+            
+            st.markdown("---")
+            
+            # ============ Section 2: Real-Time Tracking ============
+            st.subheader("🗺️ Live Order Tracking")
+            
+            tab_tracking, tab_timeline = st.tabs(["📍 Map View", "⏱️ Timeline"])
+            
+            with tab_tracking:
+                # Show simulated map
+                fig_map = tracker.plot_real_time_location(order_data)
+                st.plotly_chart(fig_map, use_container_width=True, key="tracking_map")
+                
+                # Tracking insights
+                timeline = tracker.get_order_timeline(order_data)
+                tracking_insights = tracker.get_tracking_insights(order_data, timeline)
+                
+                st.markdown("### 📊 Tracking Insights")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.info(f"**Current Stage:** {tracking_insights['current_stage']}")
+                    st.success(f"**Next Action:** {tracking_insights['next_action']}")
+                
+                with col2:
+                    est_delivery = tracking_insights.get('estimated_delivery')
+                    if est_delivery:
+                        st.warning(f"**Estimated Delivery:** {est_delivery.strftime('%b %d, %I:%M %p')}")
+                    
+                    risk_emoji = {'high': '🔴', 'medium': '🟡', 'low': '🟢'}
+                    st.metric("Delay Risk Level", f"{risk_emoji.get(tracking_insights['delay_risk'], '🟢')} {tracking_insights['delay_risk'].upper()}")
+                
+                # Alerts
+                if tracking_insights['alerts']:
+                    st.markdown("### 🔔 Active Alerts")
+                    for alert in tracking_insights['alerts']:
+                        if '⚠️' in alert or '🚨' in alert:
+                            st.warning(alert)
+                        elif '✅' in alert:
+                            st.success(alert)
+                        else:
+                            st.info(alert)
+            
+            with tab_timeline:
+                # Show timeline
+                fig_timeline = tracker.plot_order_timeline(timeline)
+                st.plotly_chart(fig_timeline, use_container_width=True, key="order_timeline")
+                
+                # Timeline legend
+                st.markdown("""
+                **Timeline Status:**
+                - ✓ **Completed** - Stage finished
+                - ⏳ **In Progress** - Currently at this stage
+                - ○ **Pending** - Upcoming stage
+                """)
+            
+            st.markdown("---")
+            
+            # ============ Section 3: Improvement Opportunities ============
+            st.subheader("🎯 How to Improve Your Delivery Success")
+            
+            improvement_data = insights_gen.get_order_improvement_score(order_data)
+            
+            # Score card
+            col1, col2, col3 = st.columns(3)
+            
+            col1.metric("Your Score", f"{improvement_data['current_score']}/100", 
+                       help="Based on order characteristics and past behavior")
+            col2.metric("Grade", improvement_data['grade'],
+                       help="A+ = Excellent, A = Good, B = Average, C = Needs Improvement")
+            col3.metric("Improvement Potential", f"+{improvement_data['improvement_potential']}%",
+                       help="How much you can improve delivery success")
+            
+            # Improvement chart
+            if improvement_data['factors']:
+                st.markdown("### 📈 What You Can Improve")
+                fig_improvement = insights_gen.plot_improvement_opportunities(improvement_data)
+                st.plotly_chart(fig_improvement, use_container_width=True, key="improvement_chart")
+                
+                # Detailed recommendations
+                st.markdown("### 💡 Actionable Steps")
+                for i, factor in enumerate(improvement_data['factors'], 1):
+                    with st.expander(f"{i}. {factor['factor']} (Impact: {abs(factor['impact'])}%)"):
+                        st.write(f"**What to do:** {factor['fix']}")
+                        st.progress(abs(factor['impact']) / 100)
+            else:
+                st.success("🌟 Perfect! You're already following all best practices!")
+            
+            st.markdown("---")
+            
+            # ============ Section 4: Best Practices Guide ============
+            st.subheader("📚 Personalized Best Practices")
+            st.caption("Tips customized for your order")
+            
+            best_practices = insights_gen.get_customer_best_practices(order_data)
+            
+            tab_before, tab_during, tab_communication, tab_general = st.tabs([
+                "📅 Before Ordering",
+                "📦 During Delivery", 
+                "💬 Communication",
+                "🌟 General Tips"
+            ])
+            
+            with tab_before:
+                st.markdown("### Things to Consider Before Placing Orders")
+                for tip in best_practices['before_ordering']:
+                    st.markdown(f"- {tip}")
+            
+            with tab_during:
+                st.markdown("### What to Do While Your Order is Being Delivered")
+                for tip in best_practices['during_delivery']:
+                    st.markdown(f"- {tip}")
+            
+            with tab_communication:
+                st.markdown("### How to Communicate Effectively")
+                for tip in best_practices['communication']:
+                    st.markdown(f"- {tip}")
+            
+            with tab_general:
+                st.markdown("### General Best Practices")
+                for tip in best_practices['general_tips']:
+                    st.markdown(f"- {tip}")
+            
+            st.markdown("---")
+            
+            # ============ Section 5: Quick Reference Card ============
+            st.subheader("📋 Quick Reference Card")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**📞 Customer Support**")
+                st.info("""
+                - **Carrier:** {carrier}
+                - **Tracking ID:** {order_id}
+                - **Support:** 1800-XXX-XXXX
+                - **Email:** support@carrier.com
+                """.format(
+                    carrier=order_data.get('carrier', 'N/A'),
+                    order_id=selected_order_id
+                ))
+            
+            with col2:
+                st.markdown("**📦 Delivery Details**")
+                st.info(f"""
+                - **Distance:** {order_data.get('distance_km', 0):.1f} km
+                - **Priority:** {order_data.get('priority', 'Standard')}
+                - **Value:** {format_currency(order_data.get('order_value', 0))}
+                - **Segment:** {order_data.get('customer_segment', 'N/A')}
+                """)
+            
+            with col3:
+                st.markdown("**⚡ Quick Actions**")
+                if st.button("🔔 Enable Notifications", key="enable_notif"):
+                    st.success("✅ Notifications enabled!")
+                
+                if st.button("📞 Call Carrier", key="call_carrier"):
+                    st.info(f"📞 Dialing {order_data.get('carrier', 'carrier')} support...")
+                
+                if st.button("📧 Email Updates", key="email_updates"):
+                    st.success("✅ Email alerts activated!")
+            
+            st.markdown("---")
+            
+            # ============ Section 6: Order Summary ============
+            with st.expander("📊 Complete Order Summary"):
+                order_summary_df = pd.DataFrame([{
+                    'Field': key,
+                    'Value': str(value)
+                } for key, value in order_data.items() if not key.startswith('_')])
+                
+                st.dataframe(order_summary_df, use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":
