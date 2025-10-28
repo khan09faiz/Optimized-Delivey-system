@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+predictive_delivery_optimizer/logs/
+predictive_delivery_optimizer/__pycache__/
+predictive_delivery_optimizer/models/
+predictive_delivery_optimizer/outputs/
+predictive_delivery_optimizer/data/
+*.pyc
+__pycache__/
